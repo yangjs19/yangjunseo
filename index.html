@@ -1,0 +1,291 @@
+<<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FPS 게임</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+            background-color: #222;
+        }
+        #score {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+        }
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 48px;
+            font-family: Arial, sans-serif;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="score">제거된 적: 0 | 능력 시간: 0 | 목숨: 4</div>
+    <div id="gameOver">Game Over</div>
+    <canvas id="gameCanvas"></canvas>
+    <script>
+        // 캔버스와 2D 컨텍스트 설정
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 캔버스 크기 설정
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // 플레이어 설정
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            radius: 20,
+            color: 'blue',
+            speed: 5,
+            originalSpeed: 5, // 기본 속도
+            boostedSpeed: 10, // 능력 사용 시 속도
+            isBoosted: false, // 능력 활성화 여부
+            boostTime: 0, // 능력 지속 시간
+            boostDuration: 5000 // 능력 지속 시간 (5초)
+        };
+
+        // 키 상태 관리
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false,
+            shift: false
+        };
+
+        // 게임 상태
+        let score = 0;
+        let lives = 4; // 플레이어의 목숨
+
+        // 적 설정
+        const enemies = [];
+        let enemySpeed = 2; // 초기 적 속도
+        let maxEnemies = 5; // 생성되는 적의 수
+
+        // 총알 설정
+        const bullets = [];
+        const bulletSpeed = 7;
+        const bulletSpread = 0.2; // 능력 활성화 시 총알의 발산 각도
+
+        // 마우스 이벤트: 총알 발사
+        canvas.addEventListener('click', () => {
+            const angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+            if (player.isBoosted) {
+                // 능력 사용 시 여러 발 발사
+                for (let i = -1; i <= 1; i++) {
+                    const spreadAngle = angle + i * bulletSpread;
+                    const velocity = { x: Math.cos(spreadAngle) * bulletSpeed, y: Math.sin(spreadAngle) * bulletSpeed };
+                    bullets.push({ x: player.x, y: player.y, velocity });
+                }
+            } else {
+                // 기본 총알 발사
+                const velocity = { x: Math.cos(angle) * bulletSpeed, y: Math.sin(angle) * bulletSpeed };
+                bullets.push({ x: player.x, y: player.y, velocity });
+            }
+        });
+
+        // 마우스 위치 추적
+        let mouseX = 0;
+        let mouseY = 0;
+        canvas.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        // 키 입력 처리
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'w') keys.w = true;
+            if (e.key === 'a') keys.a = true;
+            if (e.key === 's') keys.s = true;
+            if (e.key === 'd') keys.d = true;
+            if (e.key === 'Shift') keys.shift = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'w') keys.w = false;
+            if (e.key === 'a') keys.a = false;
+            if (e.key === 's') keys.s = false;
+            if (e.key === 'd') keys.d = false;
+            if (e.key === 'Shift') keys.shift = false;
+        });
+
+        // 적 생성 함수
+        function spawnEnemy() {
+            if (enemies.length < maxEnemies) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                enemies.push({ x, y, radius: 20, color: 'red' });
+            }
+        }
+
+        // 총알 이동 및 충돌 처리
+        function moveBullets() {
+            for (let i = 0; i < bullets.length; i++) {
+                const bullet = bullets[i];
+                bullet.x += bullet.velocity.x;
+                bullet.y += bullet.velocity.y;
+
+                // 화면 밖으로 나가면 총알 제거
+                if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+                    bullets.splice(i, 1);
+                    i--;
+                }
+            }
+        }
+
+        // 적 이동 및 충돌 처리
+        function moveEnemies() {
+            for (let i = 0; i < enemies.length; i++) {
+                const enemy = enemies[i];
+                // 적이 플레이어를 향해 이동
+                const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+                enemy.x += Math.cos(angle) * enemySpeed;
+                enemy.y += Math.sin(angle) * enemySpeed;
+
+                // 적과 총알 충돌 처리
+                for (let j = 0; j < bullets.length; j++) {
+                    const bullet = bullets[j];
+                    const dist = Math.hypot(enemy.x - bullet.x, enemy.y - bullet.y);
+                    if (dist < enemy.radius + 5) {
+                        // 적을 제거하고 점수 증가
+                        enemies.splice(i, 1);
+                        bullets.splice(j, 1);
+                        score++; // 점수 증가
+                        document.getElementById('score').textContent = `제거된 적: ${score} | 능력 시간: ${Math.max(0, player.boostTime / 1000)} | 목숨: ${lives}`;
+                        i--;
+                        j--;
+                        break;
+                    }
+                }
+
+                // 적과 플레이어 충돌 처리
+                const distToPlayer = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+                if (distToPlayer < enemy.radius + player.radius) {
+                    // 플레이어가 적과 충돌하면 목숨 하나 감소
+                    lives--;
+                    enemies.splice(i, 1);
+                    if (lives <= 0) {
+                        gameOver();
+                    } else {
+                        document.getElementById('score').textContent = `제거된 적: ${score} | 능력 시간: ${Math.max(0, player.boostTime / 1000)} | 목숨: ${lives}`;
+                    }
+                    i--;
+                }
+            }
+        }
+
+        // 플레이어 이동 함수
+        function movePlayer() {
+            const speed = keys.shift ? player.boostedSpeed : player.originalSpeed;
+
+            if (keys.w) player.y -= speed;
+            if (keys.a) player.x -= speed;
+            if (keys.s) player.y += speed;
+            if (keys.d) player.x += speed;
+
+            // 화면을 벗어나지 않도록 제한
+            if (player.x < 0) player.x = 0;
+            if (player.x > canvas.width) player.x = canvas.width;
+            if (player.y < 0) player.y = 0;
+            if (player.y > canvas.height) player.y = canvas.height;
+        }
+
+        // 능력 타이머 관리
+        function manageBoost() {
+            if (player.isBoosted) {
+                player.boostTime -= 1000 / 60; // 60fps로 시간 감소
+                if (player.boostTime <= 0) {
+                    player.isBoosted = false;
+                    player.boostTime = 0;
+                }
+            }
+        }
+
+        // 게임 난이도 증가
+        function increaseDifficulty() {
+            if (score % 10 === 0 && score > 0) {
+                enemySpeed += 0.05; // 적 속도 증가를 더 천천히
+                maxEnemies += 1; // 생성되는 적의 수 증가
+            }
+        }
+
+        // 게임 오버 처리
+        function gameOver() {
+            document.getElementById('gameOver').style.display = 'block'; // "Game Over" 메시지 표시
+            cancelAnimationFrame(update); // 게임 루프 중지
+        }
+
+        // 게임 업데이트 함수
+        function update() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 능력 타이머 관리
+            manageBoost();
+
+            // 게임 난이도 증가
+            increaseDifficulty();
+
+            // 플레이어 이동
+            movePlayer();
+
+            // 플레이어 그리기
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fillStyle = player.color;
+            ctx.fill();
+
+            // 적 그리기
+            for (let enemy of enemies) {
+                ctx.beginPath();
+                ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+                ctx.fillStyle = enemy.color;
+                ctx.fill();
+            }
+
+            // 총알 그리기
+            for (let bullet of bullets) {
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = 'white';
+                ctx.fill();
+            }
+
+            // 적과 총알 충돌 처리
+            moveBullets();
+            moveEnemies();
+
+            // 적 생성 주기
+            if (Math.random() < 0.02) {
+                spawnEnemy();
+            }
+
+            // 계속해서 업데이트
+            if (lives > 0) {
+                requestAnimationFrame(update);
+            }
+        }
+
+        // 게임 시작
+        update();
+    </script>
+</body>
+</html>
+
+
